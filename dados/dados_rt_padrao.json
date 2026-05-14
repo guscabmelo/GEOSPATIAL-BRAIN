@@ -1,0 +1,8 @@
+{
+  "_observacao": "Dados padrão do Responsável Técnico. Carregados automaticamente pelo gerar_memorial.py quando o meta.json não trouxer dados de RT. A ART pode ser sobrescrita por projeto.",
+  "nome": "GUSTAVO HENRIQUE CABRAL DE MELO",
+  "formacao": "Engenheiro Agrimensor",
+  "crea": "022229789-1/AL",
+  "credenciado_codigo": "LADU",
+  "art_padrao": "AL20260536392 - AL"
+}

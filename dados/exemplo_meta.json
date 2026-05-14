@@ -1,0 +1,30 @@
+{
+  "imovel": {
+    "denominacao": "FAZENDA ÁGUA PRETA – 01",
+    "matricula": "1827 (1 de 2)",
+    "cns_cartorio": "00.326-9",
+    "comarca": "Porto de Pedras",
+    "uf": "AL",
+    "ccir": "9501069252682",
+    "municipio": "Porto de Pedras",
+    "natureza_area": "Particular",
+    "area_ha": 253.4741,
+    "perimetro_m": 9868.92
+  },
+  "proprietario": {
+    "nome": "LUIZ HENRIQUE CAVALCANTE MELO",
+    "cpf": "008.930.464-00"
+  },
+  "rt": {
+    "nome": "GUSTAVO HENRIQUE CABRAL DE MELO",
+    "formacao": "Engenheiro Agrimensor",
+    "crea": "022229789-1/AL",
+    "credenciado_codigo": "LADU",
+    "art": "AL20260536392 - AL"
+  },
+  "certificacao_sigef": {
+    "incluir": true,
+    "codigo": "7f3ddafb-d537-4ba4-acb9-c2720460e07c",
+    "data": "11/05/26 09:20"
+  }
+}
