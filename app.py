@@ -28,7 +28,7 @@ from gerar_memorial import (
     renderizar_docx,
     renderizar_markdown,
 )
-from parser_pdf_sigef import parse_pdf_sigef
+from parser_pdf_sigef import parse_pdf_sigef, VERTEX_RE, LEG_RE
 
 # ============================================================
 # Config
@@ -467,9 +467,38 @@ with tab_pdf:
                 st.success("Dados aplicados! Vá para a aba **📄 Memorial Descritivo** para baixar o DOCX.")
                 st.rerun()
 
-        # Texto bruto extraído (para debug/conferência)
-        with st.expander("🔍 Ver texto bruto extraído do PDF"):
-            st.text_area("Texto", parsed["texto_bruto"], height=300, label_visibility="collapsed")
+        # Debug — texto extraído e diagnóstico
+        with st.expander("🔍 Diagnóstico / texto extraído do PDF"):
+            tab_bruto, tab_norm, tab_diag = st.tabs(["Texto bruto", "Texto normalizado", "Diagnóstico"])
+            with tab_bruto:
+                st.caption("Texto como o pdfplumber extraiu do PDF (antes de qualquer tratamento).")
+                st.text_area("Bruto", parsed["texto_bruto"], height=300, label_visibility="collapsed")
+            with tab_norm:
+                st.caption("Texto após normalização de encoding (°, ', \", espaços). É sobre este texto que os regex operam.")
+                st.text_area("Norm", parsed["texto_normalizado"], height=300, label_visibility="collapsed")
+            with tab_diag:
+                tn = parsed["texto_normalizado"]
+                n_vert = len(list(VERTEX_RE.finditer(tn)))
+                n_leg  = len(list(LEG_RE.finditer(tn)))
+                tem_inicio = bool(_re.search(r"Inicia-se\s+a\s+descri[cç][aã]o", tn, _re.IGNORECASE))
+                tem_fecha  = bool(_re.search(r"fechando\s+assim", tn, _re.IGNORECASE))
+                st.markdown(f"""
+| Verificação | Resultado |
+|---|---|
+| Phrase "Inicia-se a descrição" encontrada | {'✅ sim' if tem_inicio else '❌ NÃO'} |
+| Phrase "fechando assim" encontrada | {'✅ sim' if tem_fecha else '❌ NÃO'} |
+| Correspondências de vértice (regex) | **{n_vert}** |
+| Correspondências de leg (azimute/distância) | **{n_leg}** |
+| Vértices retornados após parse | **{len(verts_ext)}** |
+""")
+                if n_vert == 0:
+                    st.warning(
+                        "Nenhum vértice encontrado. Verifique no texto normalizado se o formato das "
+                        "coordenadas está no padrão `9°11'50,695\" S`. Casos não suportados: grau "
+                        "representado pela letra `o` minúscula (ex: `9o11'`)."
+                    )
+                st.markdown("**Primeiros 500 caracteres do texto normalizado:**")
+                st.code(tn[:500])
 
     else:
         st.info("Faça upload de um PDF de memorial SIGEF para começar.")
