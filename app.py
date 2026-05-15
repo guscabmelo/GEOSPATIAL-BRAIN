@@ -476,8 +476,14 @@ with tab_pdf:
         with col_aplica2:
             if st.button("✅ Aplicar dados ao app", type="primary", use_container_width=True):
                 aplicar_meta_extraido(meta_ext, usar_ladu_como_rt=usar_ladu)
-                st.session_state["df_vertices"] = pd.DataFrame(verts_ext)
-                st.success("Dados aplicados! Vá para a aba **📄 Memorial Descritivo** para baixar o DOCX.")
+                if verts_ext:
+                    st.session_state["df_vertices"] = pd.DataFrame(verts_ext)
+                    st.success("Dados aplicados! Vá para a aba **📄 Memorial Descritivo** para baixar o DOCX.")
+                else:
+                    st.warning(
+                        "Metadados aplicados, mas **nenhum vértice foi extraído do PDF**. "
+                        "Verifique o Diagnóstico abaixo e insira os vértices manualmente na aba 📍."
+                    )
                 st.rerun()
 
         # Debug — texto extraído e diagnóstico
@@ -504,11 +510,25 @@ with tab_pdf:
 | Correspondências de leg (azimute/distância) | **{n_leg}** |
 | Vértices retornados após parse | **{len(verts_ext)}** |
 """)
-                if n_vert == 0:
-                    st.warning(
-                        "Nenhum vértice encontrado. Verifique no texto normalizado se o formato das "
-                        "coordenadas está no padrão `9°11'50,695\" S`. Casos não suportados: grau "
-                        "representado pela letra `o` minúscula (ex: `9o11'`)."
+                # Mostra contexto em volta da primeira ocorrência de "vértice"
+                m_vert_raw = _re.search(r"v[eé]rtice", tn, _re.IGNORECASE)
+                if m_vert_raw:
+                    s = max(0, m_vert_raw.start() - 20)
+                    e = min(len(tn), m_vert_raw.start() + 300)
+                    st.markdown("**Contexto em volta da 1ª ocorrência de 'vértice'** (onde o regex deveria bater):")
+                    st.code(tn[s:e])
+                    if n_vert == 0:
+                        st.error(
+                            "A palavra 'vértice' foi encontrada mas as coordenadas não casaram. "
+                            "Veja o trecho acima e compare com o padrão esperado:\n\n"
+                            "`vértice LADU-M-0001, de coordenadas geodésicas latitude 9°11'50,695\" S e longitude 35°22'10,663\" W`"
+                        )
+                elif n_vert == 0:
+                    st.error(
+                        "A palavra 'vértice' **não foi encontrada no texto**. Possíveis causas:\n"
+                        "- PDF com imagem (sem texto digital) → use OCR antes\n"
+                        "- Estrutura muito diferente do padrão SIGEF/LADU\n\n"
+                        "Copie os primeiros 200 chars do texto bruto e envie para diagnóstico."
                     )
                 st.markdown("**Primeiros 500 caracteres do texto normalizado:**")
                 st.code(tn[:500])
@@ -603,19 +623,22 @@ with tab_vert:
     )
     st.session_state["df_vertices"] = df_editado
 
-    df_val = df_editado.dropna(subset=["vertice", "lat", "long"])
-    n_total = len(df_editado)
-    n_ok = len(df_val)
-    st.markdown(
-        f'<span class="badge-ok">✔ {n_ok} vértices válidos</span>'
-        + (f' <span class="badge-err">⚠ {n_total - n_ok} sem coordenadas</span>' if n_ok < n_total else ""),
-        unsafe_allow_html=True,
-    )
-
     obrig = {"vertice", "lat", "long", "azimute", "distancia", "confrontante"}
-    faltando = obrig - set(df_editado.columns)
+    cols_presentes = set(df_editado.columns)
+    faltando = obrig - cols_presentes
+
     if faltando:
         st.warning(f"Colunas obrigatórias faltando: {', '.join(sorted(faltando))}")
+        n_total = n_ok = 0
+    else:
+        df_val   = df_editado.dropna(subset=["vertice", "lat", "long"])
+        n_total  = len(df_editado)
+        n_ok     = len(df_val)
+        st.markdown(
+            f'<span class="badge-ok">✔ {n_ok} vértices válidos</span>'
+            + (f' <span class="badge-err">⚠ {n_total - n_ok} sem coordenadas</span>' if n_ok < n_total else ""),
+            unsafe_allow_html=True,
+        )
 
 
 # ============================================================

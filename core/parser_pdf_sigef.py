@@ -1,12 +1,12 @@
 """
-parser_pdf_sigef.py — v2 — Extrai dados de um memorial descritivo SIGEF em PDF.
+parser_pdf_sigef.py - v2 - Extrai dados de um memorial descritivo SIGEF em PDF.
 
-Robusto a variações de encoding que pdfplumber pode produzir:
-  - º (U+00BA ordinal) vs ° (U+00B0 grau)
-  - ' (aspas curvas) vs ' (apóstrofe)
-  - " (aspas curvas) vs " (reta)
-  - palavras com/sem acento (vértice/vertice, distância/distancia, etc.)
-  - símbolo de segundos ausente
+Robusto a variacoes de encoding que pdfplumber pode produzir:
+  - ordinal (U+00BA) vs grau (U+00B0)
+  - aspas curvas como apóstrofe ou segundo
+  - palavras com/sem acento (vertice/vertice, distancia/distancia, etc.)
+  - simbolo de segundos ausente
+  - virgula após codigo do vertice ausente
 """
 
 from __future__ import annotations
@@ -21,121 +21,124 @@ except ImportError:
 
 
 # ============================================================
-# Regex — vértices na prosa
+# Regex - vertices na prosa
 # ============================================================
 
-# Após normalização, ° e ' estão canônicos. Mas deixamos [°º] e [''] como
-# segunda camada de segurança caso a normalização não pegue alguma variante.
-
 VERTEX_RE = re.compile(
-    # "vértice" ou "vertice" (sem acento)
-    r"v[eé]rtices?\s+"
-    # código: começa com letra, aceita letras, dígitos, hífen, ponto
+    r"v[e\xe9]rtices?\s+"
     r"([A-Za-z][A-Za-z0-9\-\.]*)"
-    r"\s*[,;]\s*"
-    # "de coordenadas geodésicas" (acento opcional)
-    r"(?:de\s+)?coordenadas?\s+geod[eé]sicas?\s+"
-    # latitude: GG°MM'SS,sss" — °/º, '/', segundos opcionais
-    r"latitude\s+(\d+[°º]\s*\d+['''’′]\s*[\d.,]+[\"''”″]?\s*)"
-    r"\s*[Ss]\s+"
+    r"\s*[,;]?\s*"
+    r"(?:de\s+)?coordenadas?\s+geod[e\xe9]sicas?\s+"
+    r"latitude\s+(\d+[\xb0\xba]\s*\d+['’‘′]\s*[\d.,]+[\"'”″]?\s*)"
+    r"\s*[Ss]\s*"
     r"e\s+longitude\s+"
-    r"(\d+[°º]\s*\d+['''’′]\s*[\d.,]+[\"''”″]?\s*)"
+    r"(\d+[\xb0\xba]\s*\d+['’‘′]\s*[\d.,]+[\"'”″]?\s*)"
     r"\s*[Ww]",
     re.IGNORECASE,
 )
 
-# Leg: confrontante (opcional) + azimute + distância
 LEG_RE = re.compile(
-    # confrontante (opcional)
     r"(?:confrontando\s+(?:agora\s+)?com\s+"
     r"(.+?)"
     r"(?:\s*\(([^)]*)\))?"
     r"\s*,\s+)?"
-    # azimute geodésico (acento e símbolo opcionais)
-    r"com\s+azimute\s+geod[eé]sico\s+de\s+"
-    r"(\d+[°º]\s*\d+['''’′])"
+    r"com\s+azimute\s+geod[e\xe9]sico\s+de\s+"
+    r"(\d+[\xb0\xba]\s*\d+['’‘′])"
     r"\s+"
-    # distância (acento opcional)
-    r"e\s+dist[aâ]ncia\s+de\s+"
+    r"e\s+dist[a\xe2]ncia\s+de\s+"
     r"([\d.,]+)\s*m",
     re.IGNORECASE | re.DOTALL,
 )
 
-MATRICULA_QUAL_RE = re.compile(r"Matr[íi]cula\s+([^,)]+)", re.IGNORECASE)
+MATRICULA_QUAL_RE = re.compile(r"Matr[i\xed]cula\s+([^,)]+)", re.IGNORECASE)
 CNS_QUAL_RE = re.compile(r"CNS\s+([^,)]+)", re.IGNORECASE)
 
 
 # ============================================================
-# Cabeçalho — padrão SIGEF (labels em maiúsculas ou mistas)
+# Cabecalho - padrao SIGEF (labels maiusculas ou mistas)
 # ============================================================
 
 CABECALHO_PATTERNS = {
-    "denominacao":    r"denomina[cç][aã]o\s*:\s*(.+?)\s*(?=propriet[aá]|$)",
-    "proprietario":   r"propriet[aá]rio\(?[aA]?\)?\s*:\s*(.+?)\s*(?=CPF|$)",
+    "denominacao":    r"denomina[c\xe7][a\xe3]o\s*:\s*(.+?)\s*(?=propriet[a\xe1]|$)",
+    "proprietario":   r"propriet[a\xe1]rio\(?[aA]?\)?\s*:\s*(.+?)\s*(?=CPF|$)",
     "cpf":            r"CPF\s*:\s*([\d.\-/]+)",
-    "matricula":      r"matr[íi]cula\s+do\s+im[oó]vel\s*:\s*(.+?)\s*(?=cart[oó]rio|$)",
-    "cartorio_raw":   r"cart[oó]rio\s+de\s+registro\s+de\s+im[oó]veis\s*:\s*(.+?)\s*(?=c[oó]digo\s+INCRA|$)",
-    "ccir":           r"c[oó]digo\s+INCRA[/\/]SNCR\s*:\s*([\d/.\-]+)",
-    "municipio_uf":   r"munic[íi]pio[/\/]UF\s*:\s*(.+?)\s*(?=natureza|$)",
-    "natureza_area":  r"natureza\s+da\s+[aá]rea\s*:\s*(.+?)\s*(?=[aá]rea|$)",
-    "area_ha":        r"[aá]rea\s*(?:total\s*)?:\s*([\d.,]+)\s*ha",
-    "perimetro_m":    r"per[íi]metro\s*:\s*([\d.,]+)\s*m",
-    "rt_nome":        r"respons[aá]vel\s+t[eé]cnico\(?[aA]?\)?\s*:\s*(.+?)\s*(?=forma[cç][aã]o|$)",
-    "rt_formacao":    r"forma[cç][aã]o\s*:\s*(.+?)\s*(?=conselho\s+profissional|$)",
-    "rt_crea":        r"conselho\s+profissional\s*:\s*(.+?)\s*(?=c[oó]digo\s+de\s+credenciamento|$)",
-    "rt_credenciado": r"c[oó]digo\s+de\s+credenciamento\s*:\s*(.+?)\s*(?=documento\s+de\s+RT|$)",
-    "rt_art":         r"documento\s+de\s+RT\s*:\s*(.+?)\s*(?=DESCRI[CÇ][AÃÃ]O|$)",
-    "sigef_codigo":   r"certifica[cç][aã]o\s+SIGEF\s*:\s*([a-f0-9A-F\-]{20,})",
-    "sigef_data":     r"data\s+da\s+certifica[cç][aã]o\s*:\s*([\d/:\s]+?)(?:\s*Em\s+atendimento|$)",
+    "matricula":      r"matr[i\xed]cula\s+do\s+im[o\xf3]vel\s*:\s*(.+?)\s*(?=cart[o\xf3]rio|$)",
+    "cartorio_raw":   r"cart[o\xf3]rio\s+de\s+registro\s+de\s+im[o\xf3]veis\s*:\s*(.+?)\s*(?=c[o\xf3]digo\s+INCRA|$)",
+    "ccir":           r"c[o\xf3]digo\s+INCRA[/]SNCR\s*:\s*([\d/.\-]+)",
+    "municipio_uf":   r"munic[i\xed]pio[/]UF\s*:\s*(.+?)\s*(?=natureza|$)",
+    "natureza_area":  r"natureza\s+da\s+[a\xe1]rea\s*:\s*(.+?)\s*(?=[a\xe1]rea|$)",
+    "area_ha":        r"[a\xe1]rea\s*(?:total\s*)?:\s*([\d.,]+)\s*ha",
+    "perimetro_m":    r"per[i\xed]metro\s*:\s*([\d.,]+)\s*m",
+    "rt_nome":        r"respons[a\xe1]vel\s+t[e\xe9]cnico\(?[aA]?\)?\s*:\s*(.+?)\s*(?=forma[c\xe7][a\xe3]o|$)",
+    "rt_formacao":    r"forma[c\xe7][a\xe3]o\s*:\s*(.+?)\s*(?=conselho\s+profissional|$)",
+    "rt_crea":        r"conselho\s+profissional\s*:\s*(.+?)\s*(?=c[o\xf3]digo\s+de\s+credenciamento|$)",
+    "rt_credenciado": r"c[o\xf3]digo\s+de\s+credenciamento\s*:\s*(.+?)\s*(?=documento\s+de\s+RT|$)",
+    "rt_art":         r"documento\s+de\s+RT\s*:\s*(.+?)\s*(?=DESCRI|$)",
+    "sigef_codigo":   r"certifica[c\xe7][a\xe3]o\s+SIGEF\s*:\s*([a-f0-9A-F\-]{20,})",
+    "sigef_data":     r"data\s+da\s+certifica[c\xe7][a\xe3]o\s*:\s*([\d/:\s]+?)(?:\s*Em\s+atendimento|$)",
 }
 
 
 # ============================================================
-# Extração de texto do PDF
+# Extracao de texto do PDF
 # ============================================================
 
+def _parece_fragmentado(txt: str) -> bool:
+    linhas = [l for l in txt.splitlines() if l.strip()]
+    if not linhas:
+        return False
+    curtas = sum(1 for l in linhas if len(l.strip()) <= 3)
+    return curtas / len(linhas) > 0.4
+
+
 def extrair_texto_pdf(pdf_path: str | Path) -> str:
-    """Extrai texto de um PDF página por página, com fallback robusto."""
+    """Extrai texto de um PDF com multiplas estrategias de fallback."""
     if pdfplumber is None:
-        raise RuntimeError("pdfplumber não instalado. Execute: pip install pdfplumber")
+        raise RuntimeError("pdfplumber nao instalado. Execute: pip install pdfplumber")
+
     pages = []
     with pdfplumber.open(str(pdf_path)) as pdf:
         for page in pdf.pages:
-            # Tenta extração simples (melhor para PDFs de coluna única como o SIGEF)
             txt = page.extract_text() or ""
+
+            if not txt.strip() or _parece_fragmentado(txt):
+                try:
+                    alt = page.extract_text(x_tolerance=3, y_tolerance=3) or ""
+                    if len(alt) > len(txt):
+                        txt = alt
+                except Exception:
+                    pass
+
             if not txt.strip():
-                # Fallback: extrai palavras e reconstrói
                 words = page.extract_words(x_tolerance=3, y_tolerance=3)
                 txt = " ".join(w["text"] for w in words)
+
             pages.append(txt)
+
     return "\n".join(pages)
 
 
 # ============================================================
-# Normalização
+# Normalizacao
 # ============================================================
 
 def _normalizar(texto: str) -> str:
-    """Normaliza o texto extraído do PDF para facilitar o parsing.
+    """Normaliza o texto extraido do PDF."""
+    # Ordinal masculino -> simbolo de grau
+    texto = texto.replace("º", "°")
 
-    Converte variantes de caracteres especiais para formas canônicas:
-    º → °, aspas curvas → retas, hifenização de linha → sem hífen.
-    """
-    # Ordinal masculino → símbolo de grau
-    texto = texto.replace("º", "°")  # º → °
-
-    # Aspas simples tipográficas → apóstrofe reto
-    texto = texto.replace("‘", "'").replace("’", "'")
+    # Aspas simples tipograficas -> apostrofe reto
+    texto = texto.replace("’", "'").replace("‘", "'")
     texto = texto.replace("′", "'")
 
-    # Aspas duplas tipográficas → aspas retas
-    texto = texto.replace("“", '"').replace("”", '"')
+    # Aspas duplas tipograficas -> aspas retas
+    texto = texto.replace("”", '"').replace("“", '"')
     texto = texto.replace("″", '"')
 
-    # Hífen mole (soft hyphen) → remove
-    texto = texto.replace("\xad", "")
+    # Hifen mole (soft hyphen) -> remove
+    texto = texto.replace("­", "")
 
-    # Hifenização de quebra de linha: "exemp-\nlo" → "exemplo"
+    # Hifenizacao de quebra de linha
     texto = re.sub(r"-\s*\n\s*", "", texto)
 
     # Normaliza whitespace
@@ -148,24 +151,21 @@ def _limpar_valor(valor: str) -> str:
 
 
 def _parse_numero_br(s: str) -> float:
-    """Converte número no padrão BR ('1.234,56') para float."""
     s = s.strip()
     return float(s.replace(".", "").replace(",", "."))
 
 
 # ============================================================
-# Parse do cabeçalho
+# Parse do cabecalho
 # ============================================================
 
 def parse_cabecalho(texto_normalizado: str) -> dict:
-    """Extrai metadados do cabeçalho. Retorna dict compatível com meta.json."""
     raw = {}
     for chave, padrao in CABECALHO_PATTERNS.items():
         m = re.search(padrao, texto_normalizado, re.IGNORECASE | re.DOTALL)
         if m:
             raw[chave] = _limpar_valor(m.group(1))
 
-    # Cartório: "(00.326-9) Porto de Pedras - AL" → CNS, comarca, UF
     cartorio_raw = raw.get("cartorio_raw", "")
     cns_cartorio = comarca = uf_cart = ""
     if cartorio_raw:
@@ -175,7 +175,6 @@ def parse_cabecalho(texto_normalizado: str) -> dict:
             comarca      = m_cart.group(2).strip()
             uf_cart      = m_cart.group(3).strip()
 
-    # Município/UF
     municipio = uf = ""
     if uf_cart:
         uf = uf_cart
@@ -188,7 +187,6 @@ def parse_cabecalho(texto_normalizado: str) -> dict:
         else:
             municipio = mun_raw
 
-    # Área e perímetro
     area_ha = perim_m = None
     if "area_ha" in raw:
         try:
@@ -201,7 +199,6 @@ def parse_cabecalho(texto_normalizado: str) -> dict:
         except ValueError:
             pass
 
-    # SIGEF
     sigef_codigo = raw.get("sigef_codigo", "")
     sigef_data   = raw.get("sigef_data", "").strip()
 
@@ -238,28 +235,17 @@ def parse_cabecalho(texto_normalizado: str) -> dict:
 
 
 # ============================================================
-# Parse dos vértices
+# Parse dos vertices
 # ============================================================
 
-def parse_vertices(texto_normalizado: str) -> list[dict]:
-    """Extrai a lista de vértices da prosa do memorial SIGEF.
-
-    Estratégia:
-      1. Localiza o trecho de prosa entre "Inicia-se" e "fechando assim".
-      2. Coleta todos os vértices (código + lat + long) com suas posições.
-      3. Coleta todas as legs (confrontante + azimute + distância).
-      4. Casa cada vértice N com a leg mais próxima APÓS sua posição.
-      5. Mantém o confrontante corrente — só muda quando a leg traz novo.
-      6. Ignora o último vértice se for repetição do primeiro (retorno textual).
-    """
-    # Recorta a prosa
-    m_inicio = re.search(r"Inicia-se\s+a\s+descri[cç][aã]o", texto_normalizado, re.IGNORECASE)
+def parse_vertices(texto_normalizado: str) -> list:
+    """Extrai vertices da prosa do memorial SIGEF."""
+    m_inicio = re.search(r"Inicia-se\s+a\s+descri[c\xe7][a\xe3]o", texto_normalizado, re.IGNORECASE)
     prosa = texto_normalizado[m_inicio.start():] if m_inicio else texto_normalizado
     m_fim = re.search(r"fechando\s+assim", prosa, re.IGNORECASE)
     if m_fim:
         prosa = prosa[: m_fim.end() + 300]
 
-    # 1) Vértices
     vertices_brutos = [
         {
             "pos":    m.start(),
@@ -273,12 +259,11 @@ def parse_vertices(texto_normalizado: str) -> list[dict]:
     if not vertices_brutos:
         return []
 
-    # 2) Legs
     legs_brutos = []
     for m in LEG_RE.finditer(prosa):
-        confrontante = (m.group(1) or "").strip()
-        qual         = (m.group(2) or "").strip()
-        azimute      = m.group(3).strip()
+        confrontante  = (m.group(1) or "").strip()
+        qual          = (m.group(2) or "").strip()
+        azimute       = m.group(3).strip()
         distancia_str = m.group(4).strip()
         try:
             distancia = _parse_numero_br(distancia_str)
@@ -303,7 +288,6 @@ def parse_vertices(texto_normalizado: str) -> list[dict]:
             "distancia":    distancia,
         })
 
-    # 3) Casamento vértice → leg
     n = len(vertices_brutos)
     primeiro_codigo = vertices_brutos[0]["codigo"]
     ultimo_eh_repeticao = n > 1 and vertices_brutos[-1]["codigo"] == primeiro_codigo
@@ -354,11 +338,11 @@ def parse_vertices(texto_normalizado: str) -> list[dict]:
 
 
 # ============================================================
-# Funções públicas
+# Funcoes publicas
 # ============================================================
 
 def parse_pdf_sigef(pdf_path: str | Path) -> dict:
-    """Extrai dados de um PDF de memorial SIGEF. Retorna texto bruto, meta e vértices."""
+    """Extrai dados de um PDF de memorial SIGEF."""
     texto = extrair_texto_pdf(pdf_path)
     texto_norm = _normalizar(texto)
     return {
@@ -370,7 +354,7 @@ def parse_pdf_sigef(pdf_path: str | Path) -> dict:
 
 
 def parse_texto_sigef(texto: str) -> dict:
-    """Recebe texto já extraído (útil para testes e debug)."""
+    """Recebe texto ja extraido (util para testes e debug)."""
     texto_norm = _normalizar(texto)
     return {
         "texto_bruto":       texto,
