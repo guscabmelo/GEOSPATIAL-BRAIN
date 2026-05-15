@@ -91,6 +91,13 @@ DEFAULTS = {
 for _k, _v in DEFAULTS.items():
     st.session_state.setdefault(_k, _v)
 
+# Aplica atualizações pendentes (PDF/meta.json) ANTES de qualquer widget ser criado.
+# Streamlit não permite setar chaves vinculadas a widgets após eles renderizarem.
+if st.session_state.get("_pending"):
+    for _k, _v in st.session_state["_pending"].items():
+        st.session_state[_k] = _v
+    st.session_state["_pending"] = {}
+
 # Vértices iniciais vazios
 if st.session_state["df_vertices"] is None:
     st.session_state["df_vertices"] = pd.DataFrame([{
@@ -201,26 +208,29 @@ with st.sidebar:
             pr = meta_ext.get("proprietario", {})
             rt = meta_ext.get("rt", {})
             sg = meta_ext.get("certificacao_sigef", {})
-            st.session_state["denominacao"]   = im.get("denominacao", st.session_state["denominacao"])
-            st.session_state["matricula"]     = str(im.get("matricula", st.session_state["matricula"]))
-            st.session_state["cns_cartorio"]  = im.get("cns_cartorio", st.session_state["cns_cartorio"])
-            st.session_state["comarca"]       = im.get("comarca", st.session_state["comarca"])
-            st.session_state["uf"]            = im.get("uf", st.session_state["uf"])
-            st.session_state["ccir"]          = str(im.get("ccir", st.session_state["ccir"]))
-            st.session_state["municipio"]     = im.get("municipio", st.session_state["municipio"])
-            st.session_state["natureza_area"] = im.get("natureza_area", st.session_state["natureza_area"])
-            st.session_state["area_ha"]       = float(im.get("area_ha", st.session_state["area_ha"]))
-            st.session_state["perimetro_m"]   = float(im.get("perimetro_m", st.session_state["perimetro_m"]))
-            st.session_state["prop_nome"]     = pr.get("nome", st.session_state["prop_nome"])
-            st.session_state["prop_cpf"]      = pr.get("cpf", st.session_state["prop_cpf"])
-            st.session_state["rt_nome"]       = rt.get("nome", st.session_state["rt_nome"])
-            st.session_state["rt_formacao"]   = rt.get("formacao", st.session_state["rt_formacao"])
-            st.session_state["rt_crea"]       = rt.get("crea", st.session_state["rt_crea"])
-            st.session_state["rt_credenc"]    = rt.get("credenciado_codigo", st.session_state["rt_credenc"])
-            st.session_state["rt_art"]        = rt.get("art", st.session_state["rt_art"])
-            st.session_state["usar_sigef"]    = bool(sg.get("incluir", st.session_state["usar_sigef"]))
-            st.session_state["sigef_cod"]     = sg.get("codigo", st.session_state["sigef_cod"])
-            st.session_state["sigef_data"]    = sg.get("data", st.session_state["sigef_data"])
+            pending = {
+                "denominacao":   im.get("denominacao",   st.session_state["denominacao"]),
+                "matricula":     str(im.get("matricula", st.session_state["matricula"])),
+                "cns_cartorio":  im.get("cns_cartorio",  st.session_state["cns_cartorio"]),
+                "comarca":       im.get("comarca",       st.session_state["comarca"]),
+                "uf":            im.get("uf",            st.session_state["uf"]),
+                "ccir":          str(im.get("ccir",      st.session_state["ccir"])),
+                "municipio":     im.get("municipio",     st.session_state["municipio"]),
+                "natureza_area": im.get("natureza_area", st.session_state["natureza_area"]),
+                "area_ha":       float(im.get("area_ha",     st.session_state["area_ha"])),
+                "perimetro_m":   float(im.get("perimetro_m", st.session_state["perimetro_m"])),
+                "prop_nome":     pr.get("nome", st.session_state["prop_nome"]),
+                "prop_cpf":      pr.get("cpf",  st.session_state["prop_cpf"]),
+                "rt_nome":       rt.get("nome",               st.session_state["rt_nome"]),
+                "rt_formacao":   rt.get("formacao",           st.session_state["rt_formacao"]),
+                "rt_crea":       rt.get("crea",               st.session_state["rt_crea"]),
+                "rt_credenc":    rt.get("credenciado_codigo", st.session_state["rt_credenc"]),
+                "rt_art":        rt.get("art",                st.session_state["rt_art"]),
+                "usar_sigef":    bool(sg.get("incluir", st.session_state["usar_sigef"])),
+                "sigef_cod":     sg.get("codigo", st.session_state["sigef_cod"]),
+                "sigef_data":    sg.get("data",   st.session_state["sigef_data"]),
+            }
+            st.session_state["_pending"] = pending
             st.success("meta.json carregado")
             st.rerun()
         except Exception as e:
@@ -265,44 +275,47 @@ def build_meta() -> dict:
 
 
 def aplicar_meta_extraido(meta_extraido: dict, usar_ladu_como_rt: bool) -> None:
-    """Copia meta extraído do PDF para o session_state. Respeita a regra de RT."""
+    """Copia meta extraído do PDF para _pending. Aplicado no próximo rerun antes dos widgets."""
     im = meta_extraido.get("imovel", {})
     pr = meta_extraido.get("proprietario", {})
     rt = meta_extraido.get("rt", {})
     sg = meta_extraido.get("certificacao_sigef", {})
 
-    if im.get("denominacao"):   st.session_state["denominacao"]   = im["denominacao"]
-    if im.get("matricula"):     st.session_state["matricula"]     = str(im["matricula"])
-    if im.get("cns_cartorio"):  st.session_state["cns_cartorio"]  = im["cns_cartorio"]
-    if im.get("comarca"):       st.session_state["comarca"]       = im["comarca"]
-    if im.get("uf"):            st.session_state["uf"]            = im["uf"]
-    if im.get("ccir"):          st.session_state["ccir"]          = str(im["ccir"])
-    if im.get("municipio"):     st.session_state["municipio"]     = im["municipio"]
-    if im.get("natureza_area"): st.session_state["natureza_area"] = im["natureza_area"]
-    if im.get("area_ha"):       st.session_state["area_ha"]       = float(im["area_ha"])
-    if im.get("perimetro_m"):   st.session_state["perimetro_m"]   = float(im["perimetro_m"])
+    pending: dict = {}
 
-    if pr.get("nome"): st.session_state["prop_nome"] = pr["nome"]
-    if pr.get("cpf"):  st.session_state["prop_cpf"]  = pr["cpf"]
+    if im.get("denominacao"):   pending["denominacao"]   = im["denominacao"]
+    if im.get("matricula"):     pending["matricula"]     = str(im["matricula"])
+    if im.get("cns_cartorio"):  pending["cns_cartorio"]  = im["cns_cartorio"]
+    if im.get("comarca"):       pending["comarca"]       = im["comarca"]
+    if im.get("uf"):            pending["uf"]            = im["uf"]
+    if im.get("ccir"):          pending["ccir"]          = str(im["ccir"])
+    if im.get("municipio"):     pending["municipio"]     = im["municipio"]
+    if im.get("natureza_area"): pending["natureza_area"] = im["natureza_area"]
+    if im.get("area_ha"):       pending["area_ha"]       = float(im["area_ha"])
+    if im.get("perimetro_m"):   pending["perimetro_m"]   = float(im["perimetro_m"])
+
+    if pr.get("nome"): pending["prop_nome"] = pr["nome"]
+    if pr.get("cpf"):  pending["prop_cpf"]  = pr["cpf"]
 
     # REGRA OBRIGATÓRIA DA SKILL: respeitar a escolha do usuário sobre o RT
     if usar_ladu_como_rt:
-        st.session_state["rt_nome"]     = RT_LADU["nome"]
-        st.session_state["rt_formacao"] = RT_LADU["formacao"]
-        st.session_state["rt_crea"]     = RT_LADU["crea"]
-        st.session_state["rt_credenc"]  = RT_LADU["credenciado_codigo"]
-        # ART deve ser informada por projeto — não sobrescrevemos do PDF
-        st.session_state["rt_art"]      = RT_LADU["art"]
+        pending["rt_nome"]    = RT_LADU["nome"]
+        pending["rt_formacao"] = RT_LADU["formacao"]
+        pending["rt_crea"]    = RT_LADU["crea"]
+        pending["rt_credenc"] = RT_LADU["credenciado_codigo"]
+        pending["rt_art"]     = RT_LADU["art"]
     else:
-        if rt.get("nome"):               st.session_state["rt_nome"]     = rt["nome"]
-        if rt.get("formacao"):           st.session_state["rt_formacao"] = rt["formacao"]
-        if rt.get("crea"):               st.session_state["rt_crea"]     = rt["crea"]
-        if rt.get("credenciado_codigo"): st.session_state["rt_credenc"]  = rt["credenciado_codigo"]
-        if rt.get("art"):                st.session_state["rt_art"]      = rt["art"]
+        if rt.get("nome"):               pending["rt_nome"]    = rt["nome"]
+        if rt.get("formacao"):           pending["rt_formacao"] = rt["formacao"]
+        if rt.get("crea"):               pending["rt_crea"]    = rt["crea"]
+        if rt.get("credenciado_codigo"): pending["rt_credenc"] = rt["credenciado_codigo"]
+        if rt.get("art"):                pending["rt_art"]     = rt["art"]
 
-    st.session_state["usar_sigef"] = bool(sg.get("incluir", False))
-    if sg.get("codigo"): st.session_state["sigef_cod"]  = sg["codigo"]
-    if sg.get("data"):   st.session_state["sigef_data"] = sg["data"]
+    pending["usar_sigef"] = bool(sg.get("incluir", False))
+    if sg.get("codigo"): pending["sigef_cod"]  = sg["codigo"]
+    if sg.get("data"):   pending["sigef_data"] = sg["data"]
+
+    st.session_state["_pending"] = pending
 
 
 # ============================================================
